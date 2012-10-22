@@ -1,0 +1,36 @@
+Time is important, but PCR is everything.
+                   -- Leonardo Da Vinci
+
+If you end up reading this file, you are either desperatly looking for
+large-scale open source PCR primer design software, or you are a member
+of my team.
+
+Either way, this is the right place to start. Oligoz is a single file
+Python module. You can import it, or run it as a command line app.
+
+To use oligoz as a command line, start by putting the target sequences for
+which you want to design primers in a single fasta file, say 'seq.fasta'.
+Then run the following from the command line:
+
+python oligoz seq.fasta
+
+The oligoz module defines a bunch of classes that may be useful for other
+applications in molecular biology. You will have to look at the source
+code for a comprehensive overview. The most important features are the
+classes 'DNAseq', 'RNAseq', 'Oligo' and 'OligoSol'. Note that the Tm is
+not a property of the oligo sequence because it depends on the concentration
+of the oligo (and of the target sequence), so only 'OligoSol' has a 'Tm'
+attribute.
+
+Here is how you can import the module in an interactive Python session and
+use it to compute a Tm.
+
+import oligoz
+oligoz.OligoSol('GATCGATCGATCGATCGTAC').Tm
+
+Note that the Tm is computed for a default 1 uM solution in the Phusion PCR
+buffer. Oh yes, and don't freak out if the Tm shown above is higher than
+330 degrees, it is because the temperature is in Kelvin. So just in case
+you would forget the value of the absolute zero, I put it there as 'ABS0'.
+
+oligoz.OligoSol('GATCGATCGATCGATCGTAC').Tm + oligoz.ABS0
