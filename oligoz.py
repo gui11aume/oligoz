@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -836,13 +837,14 @@ def fasta_search(inputfile=sys.stdin, extraL='', extraR='', **kwargs):
    return pairs
 
 if __name__ == '__main__':
+   write = sys.stdout.write
    with open(sys.argv[1]) as infile:
       pairs = fasta_search(infile, *sys.argv[2:])
    for h in pairs.keys():
       if not pairs[h]: continue
-      sys.stdout.write('\n' + re.sub('(^>[^ ]+).*', '\\1', h) + '\n\n')
+      write('\n' + re.sub('(^>[^ ]+).*', '\\1', h) + '\n\n')
       for pair in pairs[h]:
          left,right = pair
-         sys.stdout.write('(%.1f°C) %s\n' % (left.Tm-273.15, left.oligo))
-         sys.stdout.write('(%.1f°C) %s\n' % (right.Tm-273.15, right.oligo))
-         sys.stdout.write('---\n')
+         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+         write('---\n')
