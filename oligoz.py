@@ -842,7 +842,7 @@ if __name__ == '__main__':
       pairs = fasta_search(infile, *sys.argv[2:])
    for h in pairs.keys():
       if not pairs[h]: continue
-      write('\n' + re.sub('(^>[^ ]+).*', '\\1', h) + '\n\n')
+      write('\n' + h + '\n\n')
       for pair in pairs[h]:
          left,right = pair
          write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
