@@ -840,11 +840,13 @@ if __name__ == '__main__':
    write = sys.stdout.write
    with open(sys.argv[1]) as infile:
       pairs = fasta_search(infile, *sys.argv[2:])
-   for h in pairs.keys():
-      if not pairs[h]: continue
-      write('\n' + h + '\n\n')
-      for pair in pairs[h]:
-         left,right = pair
-         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-         write('---\n')
+   for header in pairs.keys():
+      if not pairs[header]: continue
+      write('\n' + header + '\n\n')
+      # The best pair is the one for which both Tm are closest to 60C.
+      best_pair = min(pairs[header],
+            key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
+      left,right = best_pair
+      write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+      write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+      write('---\n')
