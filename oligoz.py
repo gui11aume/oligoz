@@ -136,12 +136,12 @@ class ntSeq(str):
 
    # TODO: The 'RevComp()' method is obsolete. Remove it after
    # checking that the module is stable.
-   def RevComp(self):
-      """Return the Watson-Crick reverse complement of the
-      sequence as a string.
-      Requires a 'bp' attribute."""
-
-      return self.translate(self.bp)[::-1]
+   #def RevComp(self):
+   #   """Return the Watson-Crick reverse complement of the
+   #   sequence as a string.
+   #   Requires a 'bp' attribute."""
+   #
+   #   return self.translate(self.bp)[::-1]
 
    @property
    def revcomp(self):
@@ -374,8 +374,8 @@ class Oligo:
       else:
          seq = str(seq)[1:]
 
-      # Longest substring search is inefficient. Do not use for
-      # long DNA sequences.
+      # This longest substring search is inefficient. Do not use
+      # for long DNA sequences.
       revcomp = self.seq.revcomp
       for i in range(1, len(revcomp)+1):
          if revcomp[:i] not in seq: break
@@ -449,7 +449,7 @@ class OligoSol:
 
       self.hybCond = hybCond
       self.hybCond.setdefault('target', 0)
-      self.oligo = Oligo(oligo)
+      self.oligo = oligo if isinstance(oligo, Oligo) else Oligo(oligo)
 
    def __getattr__(self, name):
       """The attributes 'Tm' and 'Tm0' are defined just in time
@@ -795,7 +795,7 @@ def primer_search(template, extraL='', extraR='', **kwargs):
    ARGUMENTS:
      'template': the PCR template as a string.
      'extraL': nucleotides to add to left primer.
-     'extraN': nucleotides to add to right primer.
+     'extraR': nucleotides to add to right primer.
      'kwargs': additional arguments for hybridization
        conditions and validation rules.
    """
@@ -817,8 +817,12 @@ def primer_search(template, extraL='', extraR='', **kwargs):
 ###########          main          ###########
 ##############################################
 
-def fasta_search(inputfile=sys.stdin, extraL='', extraR='', **kwargs):
-   # Read in the fasta file.
+def fasta_search(inputfile=sys.stdin, **kwargs):
+   """Wrapper of 'primer_search' running on fasta file."""
+   # The dictionary 'seq' contains the sequences of the fasta
+   # file, indexed by the header.
+   # The special '__discard__' key holds potential comments
+   # and irrelevant information (discarded).
    seq = {'__discard__': ''}
    header = '__discard__'
    for line in inputfile:
@@ -828,16 +832,29 @@ def fasta_search(inputfile=sys.stdin, extraL='', extraR='', **kwargs):
          continue
       seq[header] += line.rstrip()
 
+   # Discard irrelevant information.
    seq.pop('__discard__')
    pairs = defaultdict(list)
-   for h in seq.keys():
-      pairs[h].extend(primer_search(seq[h], extraL, extraR, **kwargs))
+   for header in seq.keys():
+      pairs[header].extend(primer_search(seq[header], **kwargs))
 
    return pairs
 
 if __name__ == '__main__':
-   with open(sys.argv[1]) as infile:
-      pairs = fasta_search(infile, *sys.argv[2:])
+   import argparse
+   parser = argparse.ArgumentParser()
+   parser.add_argument('--extraL', metavar='L', dest='extraL', default='',
+                      type=str, help='extra nucleotides on left primer')
+   parser.add_argument('--extraR', metavar='R', dest='extraR', default='',
+                      type=str, help='extra nucleotides on right primer')
+   parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
+                      default=sys.stdin)
+   args = parser.parse_args()
+   pairs = fasta_search(
+               args.infile,
+               extraL=args.extraL,
+               extraR=args.extraR
+           )
    for h in pairs.keys():
       if not pairs[h]: continue
       sys.stdout.write('\n' + re.sub('(^>[^ ]+).*', '\\1', h) + '\n\n')
