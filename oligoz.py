@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -850,16 +851,20 @@ if __name__ == '__main__':
    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
                       default=sys.stdin)
    args = parser.parse_args()
+
    pairs = fasta_search(
                args.infile,
                extraL=args.extraL,
                extraR=args.extraR
            )
-   for h in pairs.keys():
-      if not pairs[h]: continue
-      sys.stdout.write('\n' + re.sub('(^>[^ ]+).*', '\\1', h) + '\n\n')
-      for pair in pairs[h]:
-         left,right = pair
-         sys.stdout.write('(%.1f°C) %s\n' % (left.Tm-273.15, left.oligo))
-         sys.stdout.write('(%.1f°C) %s\n' % (right.Tm-273.15, right.oligo))
-         sys.stdout.write('---\n')
+
+   for header in pairs.keys():
+      if not pairs[header]: continue
+      write('\n' + header + '\n\n')
+      # The best pair is the one for which both Tm are closest to 60C.
+      best_pair = min(pairs[header],
+            key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
+      left,right = best_pair
+      write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+      write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+      write('---\n')
