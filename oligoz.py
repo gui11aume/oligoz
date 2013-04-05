@@ -860,6 +860,7 @@ if __name__ == '__main__':
 
    for header in pairs.keys():
       if not pairs[header]: continue
+      write = sys.stdout.write
       write('\n' + header + '\n\n')
       # The best pair is the one for which both Tm are closest to 60C.
       best_pair = min(pairs[header],
