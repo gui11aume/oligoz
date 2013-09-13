@@ -64,8 +64,9 @@ N = A+G+C+T
 ##                                          ##
 ##############################################
 
-import sys
 import re
+import errno
+import sys
 from math import log, exp, sqrt
 from string import maketrans
 from collections import defaultdict
@@ -858,14 +859,18 @@ if __name__ == '__main__':
                extraR=args.extraR
            )
 
-   for header in pairs.keys():
-      if not pairs[header]: continue
-      write = sys.stdout.write
-      write('\n' + header + '\n\n')
-      # The best pair is the one for which both Tm are closest to 60C.
-      best_pair = min(pairs[header],
-            key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
-      left,right = best_pair
-      write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-      write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-      write('---\n')
+   write = sys.stdout.write
+   try:
+      for header in pairs.keys():
+         if not pairs[header]: continue
+         write('\n' + header + '\n\n')
+         # The best pair is the one for which both Tm are closest to 60C.
+         best_pair = min(pairs[header],
+               key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
+         left,right = best_pair
+         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+         write('---\n')
+   except IOError as e:
+      if e.errno == errno.EPIPE:
+         pass
