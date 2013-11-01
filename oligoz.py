@@ -819,7 +819,7 @@ def primer_search(template, extraL='', extraR='', **kwargs):
 ###########          main          ###########
 ##############################################
 
-def fasta_search(inputfile=sys.stdin, **kwargs):
+def fasta_search(inputfile=sys.stdin, approx=False, **kwargs):
    """Wrapper of 'primer_search' running on fasta file."""
    # The dictionary 'seq' contains the sequences of the fasta
    # file, indexed by the header.
@@ -838,7 +838,15 @@ def fasta_search(inputfile=sys.stdin, **kwargs):
    seq.pop('__discard__')
    pairs = defaultdict(list)
    for header in seq.keys():
-      pairs[header].extend(primer_search(seq[header], **kwargs))
+      sequence = seq[header]
+      if approx:
+         while sequence:
+            primers = primer_search(sequence, **kwargs)
+            if primers: break
+            sequence = sequence[1:-1]
+      else:
+         primers = primer_search(sequence, **kwargs)
+      pairs[header].extend(primers)
 
    return pairs
 
@@ -849,14 +857,17 @@ if __name__ == '__main__':
                       type=str, help='extra nucleotides on left primer')
    parser.add_argument('--extraR', metavar='R', dest='extraR', default='',
                       type=str, help='extra nucleotides on right primer')
+   parser.add_argument('--approx', dest='approx', action='store_true',
+                      help='extra nucleotides on right primer')
    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
                       default=sys.stdin)
    args = parser.parse_args()
 
    pairs = fasta_search(
                args.infile,
-               extraL=args.extraL,
-               extraR=args.extraR
+               extraL = args.extraL,
+               extraR = args.extraR,
+               approx = args.approx
            )
 
    write = sys.stdout.write
