@@ -859,6 +859,8 @@ if __name__ == '__main__':
                       type=str, help='extra nucleotides on right primer')
    parser.add_argument('--approx', dest='approx', action='store_true',
                       help='extra nucleotides on right primer')
+   parser.add_argument('--allpairs', dest='allpairs', action='store_true',
+                      help='show all primer pairs')
    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
                       default=sys.stdin)
    args = parser.parse_args()
@@ -874,14 +876,21 @@ if __name__ == '__main__':
    try:
       for header in pairs.keys():
          if not pairs[header]: continue
-         write('\n' + header + '\n\n')
-         # The best pair is the one for which both Tm are closest to 60C.
-         best_pair = min(pairs[header],
-               key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
-         left,right = best_pair
-         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-         write('---\n')
+         if args.allpairs:
+            write('\n' + header + '\n\n')
+            for left,right in pairs[header]:
+               write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+               write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+               write('---\n')
+         else:
+            # The best pair is that for which both Tm are closest to 60C.
+            best_pair = min(pairs[header],
+                  key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
+            left,right = best_pair
+            write('\n' + header + '\n\n')
+            write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+            write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+            write('---\n')
    except IOError as e:
       if e.errno == errno.EPIPE:
          pass
