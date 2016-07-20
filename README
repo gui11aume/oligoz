@@ -1,20 +1,20 @@
 Time is important, but PCR is everything.
                    -- Leonardo Da Vinci
 
-If you end up reading this file, you are either desperatly looking for
+If you end up reading this file, you are either desperately looking for
 large-scale open source PCR primer design software, or you are a member
 of my team.
 
 Either way, this is the right place to start. Oligoz is a single file
 Python module. You can import it, or run it as a command line app.
 
-To use oligoz as a command line, start by putting the target sequences for
+To use Oligoz as a command line, start by putting the target sequences for
 which you want to design primers in a single fasta file, say 'seq.fasta'.
 Then run the following from the command line:
 
-python oligoz seq.fasta
+python oligoz.py seq.fasta
 
-The oligoz module defines a bunch of classes that may be useful for other
+The Oligoz module defines a bunch of classes that may be useful for other
 applications in molecular biology. You will have to look at the source
 code for a comprehensive overview. The most important features are the
 classes 'DNAseq', 'RNAseq', 'Oligo' and 'OligoSol'. Note that the Tm is
