@@ -67,6 +67,8 @@ N = A+G+C+T
 import re
 import errno
 import sys
+import warnings
+
 from math import log, exp, sqrt
 from string import maketrans
 from collections import defaultdict
@@ -88,13 +90,30 @@ STD_HYBCOND = {
 
 STD_RULES = {
       'min_length':        17,
-      'max_length':        25,
+      'max_length':        30,
       'min_Tm':   273.15 + 58,
       'max_Tm':   273.15 + 65,
-      'max_self_anneal':    2,
+      'max_self_anneal':    3,
       'max_delta_Tm':       3,
-      'max_hetero_anneal':  2,
+      'max_hetero_anneal':  3,
 }
+
+
+##############################################
+##                                          ##
+##        EXCEPTIONS AND WARNINGS           ##
+##                                          ##
+##############################################
+
+
+class ForbiddenCharacter(Exception):
+   pass
+
+def _warn(msg, category=UserWarning, filename='', lineno=-1):
+   sys.stderr.write(str(msg))
+
+# Monkey patch 'warnings.showwarning()'.
+warnings.showwarning = _warn
 
 
 ##############################################
@@ -171,7 +190,7 @@ class DNAseq(ntSeq):
    def validateSeq(self, seq):
       # Check for non DNA letters.
       if self.__class__.isDNA(seq) is False:
-         raise Exception('non DNA letter(s) in ' + seq)
+         raise ForbiddenCharacter('non DNA letter(s) in ' + seq)
 
    def toRNA(self):
       return RNAseq(self.replace('T', 'U'))
@@ -200,7 +219,7 @@ class RNAseq(ntSeq):
    def validateSeq(self, seq):
       # Check for non RNA letters.
       if re.search('[^GAUC]', seq):
-         raise Exception('non RNA letter(s) in ' + seq)
+         raise ForbiddenCharacter('non RNA letter(s) in ' + seq)
 
 
 ##############################################
@@ -218,7 +237,7 @@ class DNAdseq(DNAseq):
    def validateSeq(self, seq):
       # Check for non degenerate DNA letters.
       if re.search('[^ATGCRYMKWSBVDHN]', seq):
-         raise Exception('non degenerate DNA letter(s) in ' + seq)
+         raise ForbiddenCharacter('non degenerate DNA letter(s) in ' + seq)
 
 ##############################################
 ##########         RNAdseq          ##########
@@ -236,7 +255,7 @@ class RNAdseq(RNAseq):
    def validateSeq(self, seq):
       # Check for non degenerate RNA letters.
       if re.search('[^AUGCRYMKWSBVDHN]', seq):
-         raise Exception('non degenerate RNA letter(s) in ' + seq)
+         raise ForbiddenCharacter('non degenerate RNA letter(s) in ' + seq)
 
 
 
@@ -563,7 +582,7 @@ class OligoSol:
 ##############################################
 
 
-# Exception declarati for validation.
+# Exception declaration for validation.
 class ValidationException(Exception):
    """
    Super class for failed validation.
@@ -784,6 +803,27 @@ class CompatibleOligoFinder(object):
 ###########     primer_search      ###########
 ##############################################
 
+def chew(n, d=-1):
+   """
+   A simple iterator to progressively delete the ends of a
+   sequence. This is useful to search primer pairs with
+   approximate positions.
+
+   RETURN:
+      Iterator with start and end position of a subsequence.
+      The lengths of the subsequence are nonincreasing.
+   ARGUMENT:
+      'n': the length of the sequence.
+      'd': the maximum length to delete.
+   """
+
+   if d < 0 or d > n: d = n-1
+   for delta in range(0,d+1):
+      for s in range(0, delta+1):
+         yield (s,n-delta+s)
+   return
+
+
 def primer_search(template, extraL='', extraR='', **kwargs):
    """
    Perform a product-centric primer search. Return a list of
@@ -819,14 +859,15 @@ def primer_search(template, extraL='', extraR='', **kwargs):
 ###########          main          ###########
 ##############################################
 
-def fasta_search(inputfile=sys.stdin, approx=False, **kwargs):
+def fasta_search(inputfile=sys.stdin, approx=0, **kwargs):
    """Wrapper of 'primer_search' running on fasta file."""
    # The dictionary 'seq' contains the sequences of the fasta
    # file, indexed by the header.
    # The special '__discard__' key holds potential comments
-   # and irrelevant information (discarded).
+   # in the file and other irrelevant information (discarded).
    seq = {'__discard__': ''}
    header = '__discard__'
+
    for line in inputfile:
       if line[0] == '>':
          header = line.rstrip()
@@ -839,14 +880,19 @@ def fasta_search(inputfile=sys.stdin, approx=False, **kwargs):
    pairs = defaultdict(list)
    for header in seq.keys():
       sequence = seq[header]
-      if approx:
-         while sequence:
-            primers = primer_search(sequence, **kwargs)
+      # Embed main search in a 'try' statement and
+      # deal with exceptions below.
+      try:
+         # Chew the ends of the sequence until a pair is found.
+         # Do not chew at all if 'approx' is 0.
+         for (s,e) in chew(len(sequence), approx):
+            primers = primer_search(sequence[s:e], **kwargs)
             if primers: break
-            sequence = sequence[1:-1]
-      else:
-         primers = primer_search(sequence, **kwargs)
-      pairs[header].extend(primers)
+         pairs[header].extend(primers)
+      # Caught non DNA characters: warn and skip.
+      except ForbiddenCharacter:
+         warnings.warn('Warning: ignoring %s \n' % header[1:])
+         
 
    return pairs
 
@@ -857,8 +903,8 @@ if __name__ == '__main__':
                       type=str, help='extra nucleotides on left primer')
    parser.add_argument('--extraR', metavar='R', dest='extraR', default='',
                       type=str, help='extra nucleotides on right primer')
-   parser.add_argument('--approx', dest='approx', action='store_true',
-                      help='extra nucleotides on right primer')
+   parser.add_argument('--approx', metavar='d', dest='approx', default=0,
+                      type=int, help='allows shifting oligos d nucleotides')
    parser.add_argument('--allpairs', dest='allpairs', action='store_true',
                       help='show all primer pairs')
    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
