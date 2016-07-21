@@ -96,6 +96,7 @@ STD_RULES = {
       'max_self_anneal':    3,
       'max_delta_Tm':       3,
       'max_hetero_anneal':  3,
+      'max_lanneal':        4,
 }
 
 
@@ -320,7 +321,8 @@ class Oligo:
    }
 
    def __init__(self, seq, extraNt=''):
-      """Initialize seq, and extraNt.
+      """
+      Initialize seq, and extraNt.
 
       Attribute 'thermoParams' is defined JIT upon first
       request.
@@ -332,7 +334,8 @@ class Oligo:
         (i.e. in 1M NaCl) thermodynamic properties of the
         oligo:
         H: enthalpy of annealing in cal/mol.
-        S: entropy of annealing in cal/K/mol."""
+        S: entropy of annealing in cal/K/mol.
+      """
 
       self.seq = DNAseq(str(seq))
       self.extraNt = extraNt
@@ -344,12 +347,14 @@ class Oligo:
       return len(str(self))
 
    def __getattr__(self, name):
-      """The thermodynamic attribute 'thermoParams' is defined
+      """
+      The thermodynamic attribute 'thermoParams' is defined
       just in time upon first request (seemless for the user).
 
       Compute enthalpy (H) and entropy (S) at a concentration
       of 1 M NaCl, according to the method presented in ref (1).
-      H is in cal/mol and S in cal/K mol."""
+      H is in cal/mol and S in cal/K mol.
+      """
 
       if name == 'thermoParams':
          H = Oligo.nnConst[self.seq[0]]['H'] + \
@@ -365,43 +370,87 @@ class Oligo:
       else:
          raise AttributeError()
 
+
    def misprime(self, seq=None, strict=True):
       """
       Check for mispriming between 'Oligo' instance and provided
       sequence (or self).
 
       RETURN:
-      A 'str' with the longest 3' annealing of the 'Oligo'
-      instance on the sequence defined by seq.
+         A 'str' with the longest 3' annealing of the 'Oligo'
+         instance on the sequence defined by seq.
 
       ARGUMENTS:
-      'seq': an object with a str() method, specifying a
-        template for mispriming. Defaults to None, in which
-        case the oligo itself is used for template.
-      'strict': True or False, specifies whether only extendable
-        mispriming are returned. Defaults to True."""
+         'seq': an object with a str() method, specifying a
+           template for mispriming. Defaults to None, in which
+           case the oligo itself is used for template.
+         'strict': True or False, specifies whether only extendable
+           mispriming are returned. Defaults to True.
+      """
 
       if seq is None: seq = self.seq
 
-      # Make sure that the sequence 'seq' is DNA.
+      # Make sure that 'seq' is DNA.
       if DNAseq.isDNA(seq) is False:
          raise Exception("non DNA letters in '%s'" % seq)
 
       # Remove first nucleotide of sequence if 'strict' is set
       # to 'True'. In that case, mispriming is sure to be
-      # extendable.
+      # extendable by at least one nucleotide. Otherwise, the
+      # annealing can happen as shown in the example below,
+      # whereby no extension is possible.
+      #
+      #               'Oligo'      5' TGCTGATGCGA 3'
+      #               'seq'              5' ACGCT 5'
+      #
       if strict is False:
-         seq = str(seq)
+         seq = str(seq).upper()
       else:
-         seq = str(seq)[1:]
+         seq = str(seq).upper()[1:]
 
       # This longest substring search is inefficient. Do not use
       # for long DNA sequences.
-      revcomp = self.seq.revcomp
-      for i in range(1, len(revcomp)+1):
-         if revcomp[:i] not in seq: break
-      return revcomp[:i-1]
+      rc = DNAseq(self.extraNt + self.seq).revcomp
+      for i in range(1, len(rc)+1):
+         if rc[:i] not in seq: break
+      return rc[:i-1]
 
+
+   def lanneal(self, seq=None, strict=True):
+      """
+      Compute the length of the maximum annealing between
+      'Oligo' instance and the provided sequence (or self).
+
+      RETURN:
+         A 'str' with the longest annealing of the 'Oligo'
+         instance on the sequence defined by seq.
+
+      ARGUMENTS:
+         'seq': an object with a str() method, specifying a
+           template for mispriming. Defaults to None, in which
+           case the oligo itself is used for template.
+      """
+
+      if seq is None: seq = self
+
+      # Make sure that the sequence 'seq' is DNA.
+      if DNAseq.isDNA(seq) is False:
+         raise Exception("non DNA letters in '%s'" % seq)
+
+      rc = DNAseq(self.extraNt + self.seq).revcomp
+
+      # Find the longest common substring
+      # by dynamic programming.
+      lann = 0
+      old_array = [0] * (len(rc)+1)
+      for i, x in enumerate(str(seq).upper()):
+         new_array = [0] * (len(rc)+1)
+         for j, y in enumerate(rc):
+            new_array[j+1] = old_array[j] + 1 if x == y else 0
+         lann = max(lann, max(new_array))
+         old_array = new_array
+
+      return lann
 
 
 ##############################################
@@ -432,7 +481,7 @@ class OligoSol:
        Note that dNTPs have a chelating effect on Mg2+ ions,
        so that [free Mg2+] = [Mg2+] - [dNTPs].
      target: (optional) target DNA concentration in mol/L
-       (default: negligeible)
+       (default: negligible)
     'thermoParams' .
    """
 
@@ -654,6 +703,8 @@ class ConsistencyValidator(Validator):
          raise TmTooLowException(oligoSol)
       if oligoSol.Tm > self.rules['max_Tm']:
          raise TmTooHighException(oligoSol)
+      if oligoSol.oligo.lanneal() > self.rules['max_lanneal']:
+         raise oligoSelfDimerException(oligoSol)
       return
 
 
@@ -676,9 +727,13 @@ class CompatibilityValidator(Validator):
       oligo_1 = oSS.pop().oligo
       while oSS:
          for oligo_2 in [oS.oligo for oS in oSS]:
-            hetero_anneal = \
-               max(oligo_1.misprime(oligo_2), oligo_2.misprime(oligo_1))
-            if len(hetero_anneal) > self.rules['max_hetero_anneal']:
+            # Compute the lengths of hetero annealing.
+            m1 = len(oligo_1.misprime(oligo_2))
+            m2 = len(oligo_2.misprime(oligo_1))
+            if max(m1,m2) > self.rules['max_hetero_anneal']:
+               raise HeteroAnnealException(oligoSolSet)
+            m3 = oligo_1.lanneal(oligo_2)
+            if m3 > self.rules['max_lanneal']:
                raise HeteroAnnealException(oligoSolSet)
          oligo_1 = oSS.pop().oligo
       return
@@ -704,16 +759,18 @@ class ConsistentOligoFinder(object):
       self.hybCond.update(hybCond)
 
    def __call__(self, template, extraLeft='', extraRight=''):
-      """Find consistent oligos that amplify a given template.
+      """
+      Find consistent oligos that amplify a given template.
       Does not check compatibility.
 
       RETURN:
-        list of validated 'OligoSol' instances that amplify the
+        A list of validated 'OligoSol' instances that amplify the
         specified PCR template.
       ARGUMENTS:
         'template': a string containing the sequence to be amplified.
         'extraNtPair': pair of extra nucleotides to be added to
-          the 'Oligo' instances."""
+          the 'Oligo' instances.
+      """
 
       # Here function (called twice).
       def get_all_forward_consistent(template, extraNt=''):
@@ -803,6 +860,31 @@ class CompatibleOligoFinder(object):
 ###########     primer_search      ###########
 ##############################################
 
+def score(pair):
+   """
+   Scoring function for primer pairs. The lower the score
+   the better the primer pair.
+
+   RETURN:
+      A numeric score.
+   ARGUMENT:
+      'pair': a tuple '(a,b)', where 'a' and 'b' are instances
+            of class 'OligoSol'.
+   """
+
+   L,R = pair
+
+   # Add the absolute difference of the Tm to 60C and the
+   # absolute difference in Tm between the oligos.
+   S1 = abs(L.Tm-333.15) + abs(R.Tm-333.15) + abs(L.Tm - R.Tm)
+   # Add the lengths of the self and hetero annealing.
+   S2 = len(L.oligo.misprime() + R.oligo.misprime() +
+         L.oligo.misprime(R) + R.oligo.misprime(L))
+   # Add the lengths of the unspecific annealing.
+   S3 = L.oligo.lanneal() + R.oligo.lanneal() + 2 * R.oligo.lanneal(L)
+
+   return S1 + S2 + (.6 * S3)
+
 def chew(n, d=-1):
    """
    A simple iterator to progressively delete the ends of a
@@ -878,6 +960,7 @@ def fasta_search(inputfile=sys.stdin, approx=0, **kwargs):
    # Discard irrelevant information.
    seq.pop('__discard__')
    pairs = defaultdict(list)
+
    for header in seq.keys():
       sequence = seq[header]
       # Embed main search in a 'try' statement and
@@ -887,17 +970,17 @@ def fasta_search(inputfile=sys.stdin, approx=0, **kwargs):
          # Do not chew at all if 'approx' is 0.
          for (s,e) in chew(len(sequence), approx):
             primers = primer_search(sequence[s:e], **kwargs)
-            if primers: break
-         pairs[header].extend(primers)
+            pairs[header].extend(primers)
       # Caught non DNA characters: warn and skip.
       except ForbiddenCharacter:
-         warnings.warn('Warning: ignoring %s \n' % header[1:])
+         warnings.warn('Warning: non DNA letters in %s \n' % header[1:])
          
 
    return pairs
 
-if __name__ == '__main__':
-   import argparse
+def main():
+
+   # Parse arguments.
    parser = argparse.ArgumentParser()
    parser.add_argument('--extraL', metavar='L', dest='extraL', default='',
                       type=str, help='extra nucleotides on left primer')
@@ -911,6 +994,7 @@ if __name__ == '__main__':
                       default=sys.stdin)
    args = parser.parse_args()
 
+   # Search primer pairs.
    pairs = fasta_search(
                args.infile,
                extraL = args.extraL,
@@ -918,25 +1002,36 @@ if __name__ == '__main__':
                approx = args.approx
            )
 
+   # Just a convenient macro for readability.
    write = sys.stdout.write
-   try:
-      for header in pairs.keys():
-         if not pairs[header]: continue
-         if args.allpairs:
-            write('\n' + header + '\n\n')
-            for left,right in pairs[header]:
-               write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-               write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-               write('---\n')
-         else:
-            # The best pair is that for which both Tm are closest to 60C.
-            best_pair = min(pairs[header],
-                  key=lambda pair: max([abs(o.Tm-333.15) for o in pair]))
-            left,right = best_pair
-            write('\n' + header + '\n\n')
+
+   for header in pairs.keys():
+      # Ignore sequences for which no primer pair was found.
+      if not pairs[header]: continue
+
+      # If the user wants to see it all, here it goes.
+      if args.allpairs:
+         write('\n' + header + '\n\n')
+         for left,right in pairs[header]:
             write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
             write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
             write('---\n')
+      # If the user wants to see the best pair, we score
+      # and rank them.
+      else:
+         left,right = min(pairs[header], key=score)
+         write('\n' + header + '\n\n')
+         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+         write('---\n')
+
+
+if __name__ == '__main__':
+   import argparse
+   try:
+      main()
    except IOError as e:
-      if e.errno == errno.EPIPE:
-         pass
+      # Piping the output to `head` breaks the pipe. No big deal,
+      # we suppress the error so that the user does not panic.
+      if e.errno == errno.EPIPE: pass
+
