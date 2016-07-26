@@ -85,7 +85,7 @@ ABS0 = -273.15
 STD_HYBCOND = {
       'conc': 1e-6,
       'mono': 50e-3,
-      'di'  : 0.5e-3,
+      'di'  : 1.5e-3,
 }
 
 STD_RULES = {
@@ -97,6 +97,28 @@ STD_RULES = {
       'max_delta_Tm':       3,
       'max_hetero_anneal':  3,
       'max_lanneal':        4,
+}
+
+qPCR_RULES = {
+      'min_length':        20,
+      'max_length':        24,
+      'min_Tm':   273.15 + 58,
+      'max_Tm':   273.15 + 62,
+      'max_self_anneal':    2,
+      'max_delta_Tm':       4,
+      'max_hetero_anneal':  3,
+      'max_lanneal':        4,
+}
+
+RELAXED_RULES = {
+      'min_length':        15,
+      'max_length':        35,
+      'min_Tm':   273.15 + 48,
+      'max_Tm':   273.15 + 75,
+      'max_self_anneal':    6,
+      'max_delta_Tm':      15,
+      'max_hetero_anneal':  8,
+      'max_lanneal':       20,
 }
 
 
@@ -941,15 +963,17 @@ def primer_search(template, extraL='', extraR='', **kwargs):
 ###########          main          ###########
 ##############################################
 
-def fasta_search(inputfile=sys.stdin, approx=0, **kwargs):
-   """Wrapper of 'primer_search' running on fasta file."""
-   # The dictionary 'seq' contains the sequences of the fasta
-   # file, indexed by the header.
-   # The special '__discard__' key holds potential comments
-   # in the file and other irrelevant information (discarded).
-   seq = {'__discard__': ''}
-   header = '__discard__'
 
+class HitList(list):
+   forced = False
+
+
+def parse_sequences(inputfile):
+   """
+   Read sequences from input file and return a dictionary.
+   """
+
+   seq = dict()
    for line in inputfile:
       if line[0] == '>':
          header = line.rstrip()
@@ -957,79 +981,219 @@ def fasta_search(inputfile=sys.stdin, approx=0, **kwargs):
          continue
       seq[header] += line.rstrip()
 
-   # Discard irrelevant information.
-   seq.pop('__discard__')
-   pairs = defaultdict(list)
+   return seq
 
-   for header in seq.keys():
-      sequence = seq[header]
-      # Embed main search in a 'try' statement and
-      # deal with exceptions below.
+
+def std_search(seq, args, **kwargs):
+
+   # Update with additional keyword arguments.
+   args.__dict__.update(kwargs)
+
+   # Standard search: chew the ends of the sequence until a
+   # pair is found. Do not chew at all if 'approx' is equal to 0.
+
+   found = HitList()
+   for (s,e) in chew(len(seq), args.approx):
       try:
-         # Chew the ends of the sequence until a pair is found.
-         # Do not chew at all if 'approx' is 0.
-         for (s,e) in chew(len(sequence), approx):
-            primers = primer_search(sequence[s:e], **kwargs)
-            pairs[header].extend(primers)
-      # Caught non DNA characters: warn and skip.
-      except ForbiddenCharacter:
-         warnings.warn('Warning: non DNA letters in %s \n' % header[1:])
-         
+         primers = primer_search(seq[s:e], **args.__dict__)
+         found.extend(primers)
+      # Caught non DNA characters: skip.
+      except ForbiddenCharacter: pass
+
+   return found
+
+
+
+def qPCR_search(seq, args, **kwargs):
+
+   # Using (more restrictive) rules for qPCR.
+   rules = qPCR_RULES.copy()
+   rules.update(args.__dict__)
+   args.__dict__.update(rules)
+
+   # Update with additional keyword arguments.
+   args.__dict__.update(kwargs)
+
+   # qPCR search: try all targets between 110 and 180 bp.
+
+   found = HitList()
+   for tlen in range(110, 181):
+      for s in range(len(seq)-tlen+1):
+         e = s+tlen
+         try:
+            primers = primer_search(seq[s:e], args.__dict__)
+            found.extend(primers)
+         # Caught non DNA characters: skip.
+         except ForbiddenCharacter: pass
+
+   return found
+
+
+
+def batch_search(args):
+   """
+   Wrapper for 'primer_search()'.
+   """
+
+   # Input sequences are stored in a dictionary. The key is
+   # the title, and the value is the sequence.
+   seq = parse_sequences(args.infile) 
+
+   # Set the search function.
+   search = qPCR_search if args.qPCR else std_search
+
+
+   # Valid pairs are stored in a dictionary. The key is the
+   # title of the sequence, and the value is a list of
+   # pairs of valid 'OligoSol' objects.
+   pairs = defaultdict(HitList)
+   for title,sequence in seq.items():
+      found = search(sequence, args)
+      if not found and args.force:
+         # When force finding primers, use 'RELAXED_RULES'.
+         # TODO: specify that the first search was not successful.
+         pairs[title] = search(sequence, args, **RELAXED_RULES)
+         pairs[title].forced = True
+      else:
+         pairs[title] = found
 
    return pairs
 
-def main():
 
-   # Parse arguments.
+def parse_arguments():
+   """
+   Parse command line arguments using the 'argparse' module.
+   """
+
+   import argparse
+
    parser = argparse.ArgumentParser()
-   parser.add_argument('--extraL', metavar='L', dest='extraL', default='',
-                      type=str, help='extra nucleotides on left primer')
-   parser.add_argument('--extraR', metavar='R', dest='extraR', default='',
-                      type=str, help='extra nucleotides on right primer')
-   parser.add_argument('--approx', metavar='d', dest='approx', default=0,
-                      type=int, help='allows shifting oligos d nucleotides')
-   parser.add_argument('--allpairs', dest='allpairs', action='store_true',
-                      help='show all primer pairs')
+
+   # Input-output option.
    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'),
-                      default=sys.stdin)
+                   default=sys.stdin)
+
+   # Oligo design options.
+   parser.add_argument('--extraL', metavar='L', dest='extraL', default='',
+                   type=str, help='extra nucleotides on left primer')
+
+   parser.add_argument('--extraR', metavar='R', dest='extraR', default='',
+                   type=str, help='extra nucleotides on right primer')
+
+
+   # Search options.
+   parser.add_argument('--qPCR',  dest='qPCR', action='store_true',
+                   help='search primers for qPCR')
+
+   parser.add_argument('--force',  dest='force', action='store_true',
+                   help='force find a primer pair')
+
+   parser.add_argument('--approx', metavar='d', dest='approx', default=0,
+                   type=int, help='allows d nucleotides shift')
+
+
+   # Hybridization conditions.
+   parser.add_argument('--conc', metavar='C', dest='conc',
+         type=float, default=argparse.SUPPRESS,
+         help='oligo concentration (%1.f uM)' % 
+            (1000000 * STD_HYBCOND['conc']))
+
+   parser.add_argument('--mono', metavar='C', dest='mono',
+         type=float, default=argparse.SUPPRESS,
+         help='monovalent cations concentration (%.1f mM)' % \
+               (1000 * STD_HYBCOND['mono']))
+
+   parser.add_argument('--di', metavar='C', dest='di',
+         type=float, default=argparse.SUPPRESS,
+         help='concentration of divalent cations (%.1f mM)' % \
+               (1000 * STD_HYBCOND['di']))
+
+   # Consistency rules
+   parser.add_argument('--min_length', metavar='L', dest='min_length',
+         type=int, default=argparse.SUPPRESS,
+         help='minimum oligo length (%d)' % STD_RULES['min_length'])
+
+   parser.add_argument('--max_length', metavar='L', dest='max_length',
+         type=int, default=argparse.SUPPRESS,
+         help='maximum oligo length (%d)' % \
+               STD_RULES['max_length'])
+
+   parser.add_argument('--min_Tm', metavar='T', dest='min_Tm',
+         type=int, default=argparse.SUPPRESS,
+         help='minimum oligo solution Tm (%d)' % \
+               (STD_RULES['min_Tm'] + ABS0))
+
+   parser.add_argument('--max_Tm', metavar='T', dest='max_Tm',
+         type=int, default=argparse.SUPPRESS,
+         help='maximum oligo solution Tm (%d)' % \
+               (STD_RULES['max_Tm'] + ABS0))
+
+   parser.add_argument('--max_self_anneal', metavar='M',
+         dest='max_self_anneal', default=argparse.SUPPRESS,
+         type=int, help='maximum self annealing (%d)' % \
+               STD_RULES['max_self_anneal'])
+
+   parser.add_argument('--max_lanneal', metavar='M',
+         dest='max_lanneal', default=argparse.SUPPRESS,
+         type=int, help='longest unspecific annealing (%d)' % \
+               STD_RULES['max_lanneal'])
+
+   # Compatibility rules
+   parser.add_argument('--max_delta_Tm', metavar='T',
+         dest='max_delta_Tm', type=int, default=argparse.SUPPRESS,
+         help='maximum difference between Tm (%d)' % \
+               STD_RULES['max_delta_Tm'])
+
+   parser.add_argument('--max_het_anneal', metavar='T',
+         dest='max_hetero_anneal', default=argparse.SUPPRESS,
+         type=int, help='maximum hetero annealing (%d)' % \
+               STD_RULES['max_hetero_anneal'])
+
    args = parser.parse_args()
 
-   # Search primer pairs.
-   pairs = fasta_search(
-               args.infile,
-               extraL = args.extraL,
-               extraR = args.extraR,
-               approx = args.approx
-           )
+   # Post-process arguments.
+   if hasattr(args, 'conc'):        args.conc /= 1000000
+   if hasattr(args, 'mono'):        args.mono /= 1000
+   if hasattr(args, 'di'):          args.di /= 1000
+   if hasattr(args, 'max_Tm'):      args.max_Tm -= ABS0
+   if hasattr(args, 'min_Tm'):      args.min_Tm -= ABS0
+
+   return args
+
+
+
+def show_primers(dict_of_HitList):
+   """
+   Function to display the results.
+   """
 
    # Just a convenient macro for readability.
    write = sys.stdout.write
 
-   for header in pairs.keys():
+   for title,hits in dict_of_HitList.items():
       # Ignore sequences for which no primer pair was found.
-      if not pairs[header]: continue
+      if not hits: continue
 
-      # If the user wants to see it all, here it goes.
-      if args.allpairs:
-         write('\n' + header + '\n\n')
-         for left,right in pairs[header]:
-            write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-            write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-            write('---\n')
-      # If the user wants to see the best pair, we score
-      # and rank them.
-      else:
-         left,right = min(pairs[header], key=score)
-         write('\n' + header + '\n\n')
-         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-         write('---\n')
+      # Rank pairs and show the best (lowest score).
+      left,right = min(hits, key=score)
+
+      display_title = title + ' (forced)' if hits.forced else title
+      write('\n' + display_title + '\n\n')
+      write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+      write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+      write('---\n')
+
 
 
 if __name__ == '__main__':
-   import argparse
+   # Parse arguments.
+   args = parse_arguments()
+
+   # Search primer pairs.
+   dict_of_HitList = batch_search(args)
+   
    try:
-      main()
+      show_primers(dict_of_HitList)
    except IOError as e:
       # Piping the output to `head` breaks the pipe. No big deal,
       # we suppress the error so that the user does not panic.
