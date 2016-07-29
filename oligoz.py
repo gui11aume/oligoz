@@ -71,7 +71,7 @@ import warnings
 
 from math import log, exp, sqrt
 from string import maketrans
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 
 ##############################################
@@ -971,23 +971,40 @@ class HitList(list):
 def parse_sequences(inputfile):
    """
    Read sequences from input file and return a dictionary.
+   Can read sequences from a fasta file or raw sequence format.
    """
 
-   seq = dict()
-   for line in inputfile:
-      if line[0] == '>':
-         header = line.rstrip()
-         seq[header] = ''
-         continue
-      seq[header] += line.rstrip()
+   first_line = next(inputfile)
+   seq = OrderedDict()
+
+   if first_line[0] == '>':
+      # Assume fasta format throughout.
+      header = first_line[1:].rstrip()
+      for line in inputfile:
+         if line[0] == '>':
+            header = line[1:].rstrip()
+            seq[header] = ''
+            continue
+         seq[header] += line.rstrip()
+
+   else:
+      # Assume one sequence per line throughout.
+      title = 1
+      seq[str(title)] = first_line.rstrip()
+      for line in inputfile:
+         title += 1
+         seq[str(title)] = line.rstrip()
 
    return seq
 
 
 def std_search(seq, args, **kwargs):
 
+   # Make a copy in order not to modify 'args'.
+   _args = args.__dict__.copy()
+
    # Update with additional keyword arguments.
-   args.__dict__.update(kwargs)
+   _args.update(kwargs)
 
    # Standard search: chew the ends of the sequence until a
    # pair is found. Do not chew at all if 'approx' is equal to 0.
@@ -995,7 +1012,7 @@ def std_search(seq, args, **kwargs):
    found = HitList()
    for (s,e) in chew(len(seq), args.approx):
       try:
-         primers = primer_search(seq[s:e], **args.__dict__)
+         primers = primer_search(seq[s:e], **_args)
          found.extend(primers)
       # Caught non DNA characters: skip.
       except ForbiddenCharacter: pass
@@ -1006,13 +1023,16 @@ def std_search(seq, args, **kwargs):
 
 def qPCR_search(seq, args, **kwargs):
 
+   # Make a copy in order not to modify 'args'.
+   _args = args.__dict__.copy()
+
    # Using (more restrictive) rules for qPCR.
    rules = qPCR_RULES.copy()
    rules.update(args.__dict__)
-   args.__dict__.update(rules)
+   _args.update(rules)
 
    # Update with additional keyword arguments.
-   args.__dict__.update(kwargs)
+   _args.update(kwargs)
 
    # qPCR search: try all targets between 110 and 180 bp.
 
@@ -1021,7 +1041,7 @@ def qPCR_search(seq, args, **kwargs):
       for s in range(len(seq)-tlen+1):
          e = s+tlen
          try:
-            primers = primer_search(seq[s:e], args.__dict__)
+            primers = primer_search(seq[s:e], **_args)
             found.extend(primers)
          # Caught non DNA characters: skip.
          except ForbiddenCharacter: pass
