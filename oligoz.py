@@ -973,13 +973,14 @@ def parse_sequences(inputfile):
    Read sequences from input file and return a dictionary.
    Can read sequences from a fasta file or raw sequence format.
    """
-
+   
    first_line = next(inputfile)
    seq = OrderedDict()
 
    if first_line[0] == '>':
       # Assume fasta format throughout.
       header = first_line[1:].rstrip()
+      seq[header] = ''
       for line in inputfile:
          if line[0] == '>':
             header = line[1:].rstrip()
@@ -1067,6 +1068,7 @@ def batch_search(args):
    # title of the sequence, and the value is a list of
    # pairs of valid 'OligoSol' objects.
    pairs = defaultdict(HitList)
+   import pdb; pdb.set_trace()
    for title,sequence in seq.items():
       found = search(sequence, args)
       if not found and args.force:
@@ -1191,17 +1193,21 @@ def show_primers(dict_of_HitList):
    write = sys.stdout.write
 
    for title,hits in dict_of_HitList.items():
-      # Ignore sequences for which no primer pair was found.
-      if not hits: continue
-
-      # Rank pairs and show the best (lowest score).
-      left,right = min(hits, key=score)
+      # Ignore targets if no hit is found (unless forced).
+      if not hits and not args.force: continue
 
       display_title = title + ' (forced)' if hits.forced else title
-      write('\n' + display_title + '\n\n')
-      write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
-      write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
-      write('---\n')
+
+      if not hits and args.force:
+         # No hit found.
+         write('%s\n\n** pathological **\n---\n' % display_title)
+      else:
+         # Hits found. Rank pairs and show the best (lowest) score.
+         left,right = min(hits, key=score)
+         write('\n' + display_title + '\n\n')
+         write('(%.1f deg) %s\n' % (left.Tm-273.15, left.oligo))
+         write('(%.1f deg) %s\n' % (right.Tm-273.15, right.oligo))
+         write('---\n')
 
 
 
