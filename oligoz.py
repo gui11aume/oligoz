@@ -1068,7 +1068,6 @@ def batch_search(args):
    # title of the sequence, and the value is a list of
    # pairs of valid 'OligoSol' objects.
    pairs = defaultdict(HitList)
-   import pdb; pdb.set_trace()
    for title,sequence in seq.items():
       found = search(sequence, args)
       if not found and args.force:
