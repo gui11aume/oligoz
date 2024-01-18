@@ -70,7 +70,6 @@ import sys
 import warnings
 
 from math import log, exp, sqrt
-from string import maketrans
 from collections import defaultdict, OrderedDict
 
 
@@ -111,7 +110,7 @@ qPCR_RULES = {
 }
 
 RELAXED_RULES = {
-      'min_length':        15,
+      'min_length':        20,
       'max_length':        35,
       'min_Tm':   273.15 + 48,
       'max_Tm':   273.15 + 75,
@@ -208,7 +207,7 @@ class DNAseq(ntSeq):
    """
 
    # Complementary base-pairing.
-   bp = maketrans('gatcGATC', 'ctagCTAG')
+   bp = str.maketrans({ k:v for (k,v) in zip ('gatcGATC', 'ctagCTAG') })
 
    def validateSeq(self, seq):
       # Check for non DNA letters.
@@ -237,7 +236,7 @@ class RNAseq(ntSeq):
    '''
 
    # Complementary base-pairing.
-   bp = maketrans('gaucGAUC', 'cuagCUAG')
+   bp = str.maketrans({ k:v for (k,v) in zip('gaucGAUC', 'cuagCUAG')})
 
    def validateSeq(self, seq):
       # Check for non RNA letters.
@@ -255,7 +254,7 @@ class DNAdseq(DNAseq):
    Inherits the 'toRNA()' method from DNAseq.
    '''
    # Complementary base-pairing.
-   bp = maketrans('gatcrymkbvdhGATCRYMKBVDH', 'ctagyrkmvbhdCTAGYRKMVBHD')
+   bp = str.maketrans({ k:v for (k,v) in zip('gatcrymkbvdhGATCRYMKBVDH', 'ctagyrkmvbhdCTAGYRKMVBHD')})
 
    def validateSeq(self, seq):
       # Check for non degenerate DNA letters.
@@ -273,7 +272,7 @@ class RNAdseq(RNAseq):
    '''
 
    # Complementary base-pairing.
-   bp = maketrans('gaucrymkbvdhGAUCRYMKBVDH', 'cuagyrkmvbhdCUAGYRKMVBHD')
+   bp = str.maketrans({ k:v for (k,v) in zip('gaucrymkbvdhGAUCRYMKBVDH', 'cuagyrkmvbhdCUAGYRKMVBHD')})
 
    def validateSeq(self, seq):
       # Check for non degenerate RNA letters.
@@ -801,7 +800,7 @@ class ConsistentOligoFinder(object):
             sol = OligoSol(Oligo(template[:i], extraNt), self.hybCond)
             try:
                self.validator(sol)
-            except oligoTooLongException, TmTooHighException:
+            except (oligoTooLongException, TmTooHighException):
                break
             except ValidationException:
                continue
