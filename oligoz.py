@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 """
@@ -130,8 +130,13 @@ class ForbiddenCharacter(Exception):
     pass
 
 
-def _warn(msg, category=UserWarning, filename="", lineno=-1):
-    sys.stderr.write(str(msg))
+def _warn(msg, category=UserWarning, filename="", lineno=-1, file=None, line=None):
+    """Compatibility wrapper for warnings.showwarning in Python 3."""
+    stream = sys.stderr if file is None else file
+    text = str(msg)
+    stream.write(text)
+    if not text.endswith("\n"):
+        stream.write("\n")
 
 
 # Monkey patch 'warnings.showwarning()'.
